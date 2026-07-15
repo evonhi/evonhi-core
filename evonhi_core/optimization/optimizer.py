@@ -13,7 +13,7 @@ from evonhi_core.traversal.stateful_search import ReachabilityIndex
 # retorno de nx.DiGraph a int. Antes: aplicaba acciones y devolvía el grafo remediado
 # completo, que el caller recontaba con find_attack_paths(). Ahora: aplica acciones vía
 # ReachabilityIndex.apply_and_recount() y devuelve remaining_paths directamente, para
-# soportar recount incremental a escala multi-cuenta. Ver commit <hash> y
+# soportar recount incremental a escala multi-cuenta. Ver commit a904a2b y
 # EVONHI_Multicloud_Refactor_Plan Fase 2.4. Cualquier implementación de ApplyActions
 # escrita contra la firma antigua (que devuelve un grafo) romperá silenciosamente.
 ApplyActions = Callable[[ReachabilityIndex, list[RemediationAction], list[str]], int]
@@ -55,7 +55,7 @@ def _evaluate(
     # retorno de nx.DiGraph a int. Antes: aplicaba acciones y devolvía el grafo remediado
     # completo, que el caller recontaba con find_attack_paths(). Ahora: aplica acciones vía
     # ReachabilityIndex.apply_and_recount() y devuelve remaining_paths directamente, para
-    # soportar recount incremental a escala multi-cuenta. Ver commit <hash> y
+    # soportar recount incremental a escala multi-cuenta. Ver commit a904a2b y
     # EVONHI_Multicloud_Refactor_Plan Fase 2.4. Cualquier implementación de ApplyActions
     # escrita contra la firma antigua (que devuelve un grafo) romperá silenciosamente.
     remaining_paths = apply_actions(reach_index, list(actions), selected_actions)

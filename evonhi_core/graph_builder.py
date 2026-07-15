@@ -4,7 +4,7 @@ from typing import Dict, Iterable, Tuple
 
 import networkx as nx
 
-from app.domain.analysis_models import ClusterModel, CrownJewelSpec, PolicyRule, Role, RoleBinding, ScenarioConfig
+from evonhi_core.models import ClusterModel, CrownJewelSpec, Role, RoleBinding, ScenarioConfig
 
 SECRET_READ_VERBS = {"get", "list", "watch", "*"}
 WORKLOAD_MUTATION_VERBS = {"create", "patch", "update", "*"}

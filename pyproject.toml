@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evonhi-core"
+version = "0.1.0"
+description = "EvoNHI Open Core: pure attack-graph and optimization engine"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "networkx>=3.5",
+    "pydantic>=2.11",
+]
+
+[tool.setuptools.packages.find]
+include = ["evonhi_core*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Correctness-focused gate mirroring evo_saas: pycodestyle errors, pyflakes, import order.
+select = ["E", "F", "I"]
+ignore = ["E501"]  # line length handled by formatter, not enforced hard
+
+[tool.ruff.lint.per-file-ignores]
+# Compat shims intentionally re-export names without using them locally.
+"evonhi_core/graph_builder.py" = ["F401", "F403"]
+"evonhi_core/path_analysis.py" = ["F401", "F403"]
+"evonhi_core/optimizer.py" = ["F401", "F403"]
+"evonhi_core/__init__.py" = ["F401"]

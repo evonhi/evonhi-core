@@ -4,11 +4,14 @@ import itertools
 import math
 import random
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Callable, Sequence
 
-from app.domain.analysis_models import PlanEvaluation, RemediationAction
-from app.engine.path_analysis import find_attack_paths
-from app.engine.remediation import apply_actions
+import networkx as nx
+
+from evonhi_core.models import PlanEvaluation, RemediationAction
+from evonhi_core.path_analysis import find_attack_paths
+
+ApplyActions = Callable[[nx.DiGraph, list[RemediationAction], list[str]], nx.DiGraph]
 
 
 @dataclass(slots=True)
@@ -27,6 +30,7 @@ def _evaluate(
     baseline_paths: int,
     max_paths: int,
     budget: int | None,
+    apply_actions: ApplyActions,
 ) -> PlanEvaluation:
     selected_actions = [action.action_id for bit, action in zip(genome, actions) if bit]
     total_cost = sum(action.cost for bit, action in zip(genome, actions) if bit)
@@ -187,6 +191,7 @@ def _exact_search(
     baseline_paths: int,
     max_paths: int,
     budget: int | None,
+    apply_actions: ApplyActions,
 ) -> list[PlanEvaluation]:
     population: list[_Individual] = []
     for bits in itertools.product((0, 1), repeat=len(actions)):
@@ -194,10 +199,10 @@ def _exact_search(
             total_cost = sum(action.cost for bit, action in zip(bits, actions) if bit)
             if total_cost > budget:
                 continue
-        evaluation = _evaluate(bits, graph, actions, baseline_paths, max_paths, budget)
+        evaluation = _evaluate(bits, graph, actions, baseline_paths, max_paths, budget, apply_actions)
         population.append(_Individual(genome=list(bits), evaluation=evaluation))
     if not population:
-        population.append(_Individual(genome=[0] * len(actions), evaluation=_evaluate([0] * len(actions), graph, actions, baseline_paths, max_paths, budget)))
+        population.append(_Individual(genome=[0] * len(actions), evaluation=_evaluate([0] * len(actions), graph, actions, baseline_paths, max_paths, budget, apply_actions)))
     return _finalize(population, budget)
 
 
@@ -205,6 +210,7 @@ def optimize_actions(
     graph,
     actions: Sequence[RemediationAction],
     max_paths: int,
+    apply_actions: ApplyActions,
     budget: int | None = None,
     population_size: int = 40,
     generations: int = 25,
@@ -217,11 +223,11 @@ def optimize_actions(
 
     genome_length = len(actions)
     if genome_length <= EXACT_SEARCH_LIMIT:
-        return _exact_search(graph, actions, baseline_paths, max_paths, budget)
+        return _exact_search(graph, actions, baseline_paths, max_paths, budget, apply_actions)
 
     population: list[_Individual] = []
     for genome in _seed_population(population_size, genome_length):
-        evaluation = _evaluate(genome, graph, actions, baseline_paths, max_paths, budget)
+        evaluation = _evaluate(genome, graph, actions, baseline_paths, max_paths, budget, apply_actions)
         population.append(_Individual(genome=genome, evaluation=evaluation))
 
     for _ in range(generations):
@@ -236,9 +242,9 @@ def optimize_actions(
             child_a, child_b = _crossover(parent_a.genome, parent_b.genome, probability=0.85)
             child_a = _mutate(child_a, probability=max(0.05, 1 / genome_length))
             child_b = _mutate(child_b, probability=max(0.05, 1 / genome_length))
-            offspring.append(_Individual(child_a, _evaluate(child_a, graph, actions, baseline_paths, max_paths, budget)))
+            offspring.append(_Individual(child_a, _evaluate(child_a, graph, actions, baseline_paths, max_paths, budget, apply_actions)))
             if len(offspring) < population_size:
-                offspring.append(_Individual(child_b, _evaluate(child_b, graph, actions, baseline_paths, max_paths, budget)))
+                offspring.append(_Individual(child_b, _evaluate(child_b, graph, actions, baseline_paths, max_paths, budget, apply_actions)))
 
         combined = population + offspring
         new_population: list[_Individual] = []

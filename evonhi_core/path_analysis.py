@@ -4,8 +4,9 @@ from typing import Iterable
 
 import networkx as nx
 
-from app.config import settings
-from app.domain.analysis_models import AttackPath
+from evonhi_core.models import AttackPath
+
+DEFAULT_MAX_PATH_DEPTH = 8
 
 EDGE_RISK = {
     "uses_token": 2.0,
@@ -95,7 +96,7 @@ def find_attack_paths(graph: nx.DiGraph, max_paths: int = 50, max_depth: int | N
     if max_paths <= 0:
         return []
 
-    max_depth = max_depth or settings.max_path_depth
+    max_depth = max_depth or DEFAULT_MAX_PATH_DEPTH
     targets = set(crown_jewel_nodes(graph))
     if not targets:
         return []

@@ -29,16 +29,19 @@ from evonhi_core.models import (
 )
 from evonhi_core.optimizer import optimize_actions
 from evonhi_core.path_analysis import explain_path, find_attack_paths, path_summary
+from evonhi_core.traversal import ReachabilityIndex, reachable_states
 
 __all__ = [
     # graph construction
     "build_attack_graph",
     "node_id",
     "permission_id",
-    # path analysis
+    # path analysis / traversal
     "find_attack_paths",
     "explain_path",
     "path_summary",
+    "reachable_states",
+    "ReachabilityIndex",
     # optimization
     "optimize_actions",
     # generic + kubernetes model types

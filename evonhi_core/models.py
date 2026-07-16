@@ -119,6 +119,13 @@ class RemediationAction:
     target_edges: list[tuple[str, str]] = field(default_factory=list)
     rationale: str = ""
     telemetry_confidence: float | None = None
+    # Multi-cloud refactor (Fase 3), all additive with defaults so existing constructions
+    # keep working. effect_kind selects how the applicator realizes the action; guard_delta
+    # carries the capability change for a modify_guard action (e.g. add required=[...] to an
+    # assume-role); impact_context carries the telemetry-lookup keys the ImpactEstimator uses.
+    effect_kind: str = "remove_edge"  # "remove_edge" | "modify_guard" | "remove_node" | "weaken"
+    guard_delta: dict[str, Any] | None = None
+    impact_context: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)

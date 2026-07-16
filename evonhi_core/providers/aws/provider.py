@@ -36,7 +36,7 @@ class AwsProvider:
     """Graph-side AWS provider. Structurally conforms to GraphProvider."""
 
     name: str = "aws"
-    entry_node_kinds: tuple[str, ...] = ("workload",)  # NodeKind.COMPUTE -> "workload" (shared entry string)
+    entry_node_kinds: tuple[str, ...] = ("compute",)  # AWS entries are lambda/ec2 -> NodeKind.COMPUTE ("compute")
     capability_domain = CAPABILITY_DOMAIN
 
     def __init__(self) -> None:

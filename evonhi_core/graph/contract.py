@@ -34,9 +34,7 @@ class NodeKind(str, Enum):
     IDENTITY = "identity"        # service account (k8s), IAM role/user (aws), principal (azure/gcp)
     PERMISSION = "permission"    # rule (k8s), policy statement (aws)
     SECRET = "secret"
-    COMPUTE = "workload"         # compromisable compute running an identity: pod (k8s), lambda/ec2 (aws).
-    #                              Its graph-kind string is "workload" — the entry-node string the
-    #                              traversal detects — shared with the (golden-frozen) Kubernetes builder.
+    COMPUTE = "compute"          # workload (k8s), lambda/ec2 (aws)
     RESOURCE = "resource"        # generic protectable resource (bucket, db, kms key)
     CROWN_JEWEL = "crown_jewel"
     SCOPE = "scope"              # hierarchical container: namespace, account, management group, folder/project

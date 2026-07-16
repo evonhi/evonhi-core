@@ -226,11 +226,19 @@ def optimize_actions(
     population_size: int = 40,
     generations: int = 25,
     seed: int = 7,
+    # BREAKING CHANGE / Desviación Sancionada (Fase 5, refactor multi-cloud): se expone
+    # `entry_kinds` en la firma por diseño. Antes el índice de reachability se inicializaba con
+    # el default hardcodeado ("workload",), lo que impedía baselinear proveedores no-K8s (p.ej.
+    # AWS, cuyas entradas son "compute") sin disfrazar sus nodos. Ahora el caller pasa el
+    # provider.entry_node_kinds real. Default ("workload",) preserva la retrocompatibilidad y el
+    # golden de K8s. SOLO cambia la firma + la inicialización del ReachabilityIndex; la lógica de
+    # selección NSGA-II (dominancia, crowding, torneo, cruce, mutación) queda intacta.
+    entry_kinds: Sequence[str] = ("workload",),
 ) -> list[PlanEvaluation]:
     random.seed(seed)
     # Build the reachability index once; every evaluation recounts incrementally against it
     # instead of rebuilding the graph and re-running a full search.
-    reach_index = ReachabilityIndex(graph, max_paths=max_paths)
+    reach_index = ReachabilityIndex(graph, max_paths=max_paths, entry_kinds=entry_kinds)
     baseline_paths = reach_index.baseline_count()
     if not actions:
         return [PlanEvaluation([], baseline_paths, 0, 0, 0, 0.0)]

@@ -318,11 +318,22 @@ class ReachabilityIndex:
 
     __slots__ = ("_graph", "_paths", "_path_edges", "_path_nodes", "_max_paths", "_max_depth")
 
-    def __init__(self, graph: nx.DiGraph, *, max_paths: int = 50, max_depth: int | None = None) -> None:
+    def __init__(
+        self,
+        graph: nx.DiGraph,
+        *,
+        max_paths: int = 50,
+        max_depth: int | None = None,
+        entry_kinds: Sequence[str] = ("workload",),
+    ) -> None:
+        # Sanctioned deviation (Fase 5): entry_kinds is plumbed through to find_attack_paths so
+        # non-Kubernetes providers (e.g. AWS entries are "compute") can be baselined. Default
+        # ("workload",) preserves Kubernetes behavior and the golden. The search LOGIC below
+        # (find_attack_paths, dominance, apply_and_recount) is unchanged.
         self._graph = graph
         self._max_paths = max_paths
         self._max_depth = max_depth
-        self._paths = find_attack_paths(graph, max_paths=max_paths, max_depth=max_depth)
+        self._paths = find_attack_paths(graph, max_paths=max_paths, max_depth=max_depth, entry_kinds=entry_kinds)
         self._path_edges = [frozenset(zip(p.nodes, p.nodes[1:])) for p in self._paths]
         self._path_nodes = [frozenset(p.nodes) for p in self._paths]
 

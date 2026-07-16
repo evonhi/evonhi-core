@@ -21,7 +21,15 @@ if TYPE_CHECKING:
 
 
 class KubernetesProvider:
-    """Graph-side Kubernetes provider. Structurally conforms to GraphProvider."""
+    """Graph-side Kubernetes provider. Structurally conforms to GraphProvider.
+
+    TODO (tech debt, multi-cloud refactor): migrate build_graph to construct through
+    CanonicalGraph.add_permission_edge like AwsProvider does (Fase 5), so effective-permission
+    resolution is structurally enforced here too. It currently emits a byte-identical raw
+    nx.DiGraph to protect the S1-S4 golden; the migration must move together with the
+    downstream consumers (path_analysis/reporting/remediation) that read K8s edge attrs, and
+    re-baseline the golden if edge attrs (guard/weight) change.
+    """
 
     name: str = "kubernetes"
     entry_node_kinds: tuple[str, ...] = ("workload",)

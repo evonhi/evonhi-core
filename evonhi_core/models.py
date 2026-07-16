@@ -1,73 +1,29 @@
+"""Generic (provider-agnostic) engine types.
+
+The Kubernetes-specific dataclasses moved to ``evonhi_core.providers.kubernetes.model`` in
+Fase 4 of the multi-cloud refactor and are re-exported here so the public import surface
+(``from evonhi_core.models import ClusterModel``) stays frozen for evo_saas and the golden
+fixtures.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-
-@dataclass(slots=True)
-class Metadata:
-    name: str
-    namespace: str = "default"
-    labels: dict[str, str] = field(default_factory=dict)
-    annotations: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass(slots=True)
-class ServiceAccount:
-    metadata: Metadata
-    automount_token: bool | None = None
-
-
-@dataclass(slots=True)
-class PolicyRule:
-    resources: list[str]
-    verbs: list[str]
-    api_groups: list[str] = field(default_factory=list)
-    resource_names: list[str] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class Role:
-    metadata: Metadata
-    rules: list[PolicyRule]
-    scope: str = "Namespaced"
-
-
-@dataclass(slots=True)
-class SubjectRef:
-    kind: str
-    name: str
-    namespace: str = "default"
-
-
-@dataclass(slots=True)
-class RoleBinding:
-    metadata: Metadata
-    role_ref_kind: str
-    role_ref_name: str
-    subjects: list[SubjectRef]
-    scope: str = "Namespaced"
-
-
-@dataclass(slots=True)
-class Secret:
-    metadata: Metadata
-    kind: str = "Opaque"
-
-
-@dataclass(slots=True)
-class Workload:
-    metadata: Metadata
-    workload_kind: str
-    service_account_name: str = "default"
-    automount_token: bool | None = None
-    mounted_secrets: list[str] = field(default_factory=list)
-    public: bool = False
-
-
-@dataclass(slots=True)
-class NetworkPolicy:
-    metadata: Metadata
+# Back-compat re-export of the Kubernetes model types (now provider-owned).
+from evonhi_core.providers.kubernetes.model import (  # noqa: F401  (re-export shim)
+    ClusterModel,
+    Metadata,
+    NetworkPolicy,
+    PolicyRule,
+    Role,
+    RoleBinding,
+    Secret,
+    ServiceAccount,
+    SubjectRef,
+    Workload,
+)
 
 
 @dataclass(slots=True)
@@ -85,16 +41,6 @@ class ScenarioConfig:
     entry_workloads: list[str] = field(default_factory=list)
     max_paths: int = 50
     metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(slots=True)
-class ClusterModel:
-    service_accounts: list[ServiceAccount] = field(default_factory=list)
-    roles: list[Role] = field(default_factory=list)
-    role_bindings: list[RoleBinding] = field(default_factory=list)
-    secrets: list[Secret] = field(default_factory=list)
-    workloads: list[Workload] = field(default_factory=list)
-    network_policies: list[NetworkPolicy] = field(default_factory=list)
 
 
 @dataclass(slots=True)

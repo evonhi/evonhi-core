@@ -1,4 +1,4 @@
-"""EvoNHI Open Core — pure attack-graph and optimization engine.
+"""EvoNHI Open Core — pure attack-graph, risk and remediation-planning engine.
 
 This module re-exports the stable public API so downstream consumers (e.g. evo_saas)
 can import from ``evonhi_core`` directly. The individual submodules
@@ -29,6 +29,7 @@ from evonhi_core.models import (
 )
 from evonhi_core.optimizer import optimize_actions
 from evonhi_core.path_analysis import explain_path, find_attack_paths, path_summary
+from evonhi_core.planning import PlannerConfig, PlanningResult, RiskModel, assess_risk, plan_remediation
 from evonhi_core.traversal import ReachabilityIndex, reachable_states
 
 __all__ = [
@@ -42,7 +43,13 @@ __all__ = [
     "path_summary",
     "reachable_states",
     "ReachabilityIndex",
-    # optimization
+    # remediation planning (v2)
+    "plan_remediation",
+    "assess_risk",
+    "RiskModel",
+    "PlannerConfig",
+    "PlanningResult",
+    # optimization (v1, deprecated)
     "optimize_actions",
     # generic + kubernetes model types
     "AttackPath",

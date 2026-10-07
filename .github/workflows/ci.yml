@@ -29,7 +29,7 @@ jobs:
           pip install ruff pip-audit
 
       - name: Lint (ruff)
-        run: ruff check evonhi_core/
+        run: ruff check evonhi_core/ tests/ benchmarks/
 
       - name: Import smoke test
         run: |
@@ -40,13 +40,13 @@ jobs:
           print("evo-core imports OK")
           PY
 
-      - name: Run tests (if any)
+      - name: Run tests
         run: |
-          if ls tests/*.py >/dev/null 2>&1 || ls **/test_*.py >/dev/null 2>&1; then
-            pip install pytest && pytest -q
-          else
-            echo "no tests yet"
-          fi
+          pip install pytest
+          pytest -q
+
+      - name: Benchmark smoke (v1 vs v2)
+        run: python benchmarks/planner_v1_vs_v2.py
 
       - name: Dependency vulnerability scan
         run: pip-audit || true

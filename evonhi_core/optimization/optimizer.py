@@ -3,6 +3,7 @@ from __future__ import annotations
 import itertools
 import math
 import random
+import warnings
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -235,6 +236,12 @@ def optimize_actions(
     # selección NSGA-II (dominancia, crowding, torneo, cruce, mutación) queda intacta.
     entry_kinds: Sequence[str] = ("workload",),
 ) -> list[PlanEvaluation]:
+    warnings.warn(
+        "optimize_actions (v1: capped path counting + plain NSGA-II) is deprecated and will be removed "
+        "in evonhi-core 0.3; use evonhi_core.planning.plan_remediation",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     random.seed(seed)
     # Build the reachability index once; every evaluation recounts incrementally against it
     # instead of rebuilding the graph and re-running a full search.

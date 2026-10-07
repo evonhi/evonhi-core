@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gnazinu/evonhi-core/contracts/cluster-snapshot.v1.schema.json",
+  "title": "EvoNHI Kubernetes cluster snapshot (v1)",
+  "description": "Payload emitted by evonhi-collector and translated into a ClusterModel by evonhi_core.providers.kubernetes.snapshot. Minor versions only add optional fields. Secret values are never part of the contract.",
+  "type": "object",
+  "required": ["schema_version", "cluster_id", "collected_at", "workloads", "service_accounts", "roles", "cluster_roles", "role_bindings", "cluster_role_bindings", "secrets"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^1\\.[0-9]+$"},
+    "cluster_id": {"type": "string"},
+    "collected_at": {"type": "string", "format": "date-time"},
+    "workloads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["namespace", "name", "kind", "service_account"],
+        "properties": {
+          "namespace": {"type": "string"},
+          "name": {"type": "string"},
+          "kind": {"type": "string"},
+          "replicas": {"type": "integer"},
+          "service_account": {"type": "string"},
+          "criticality": {"type": "string"},
+          "traffic_rps": {"type": "number"},
+          "labels": {"$ref": "#/$defs/stringMap"},
+          "automount_token": {"type": ["boolean", "null"], "description": "since 1.1: pod-level automountServiceAccountToken (null = inherit from the service account)"},
+          "mounted_secrets": {"type": "array", "items": {"type": "string"}, "description": "since 1.1: secrets readable from inside the containers (volumes, env, envFrom)"},
+          "public": {"type": "boolean", "description": "since 1.1: reachable from outside the cluster"},
+          "exposed_by": {"type": "array", "items": {"type": "string"}, "description": "since 1.1: e.g. service/LoadBalancer/web, ingress/web"}
+        }
+      }
+    },
+    "service_accounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["namespace", "name"],
+        "properties": {
+          "namespace": {"type": "string"},
+          "name": {"type": "string"},
+          "labels": {"$ref": "#/$defs/stringMap"},
+          "annotations": {"$ref": "#/$defs/stringMap"},
+          "secrets": {"type": "array", "items": {"type": "string"}},
+          "automount_token": {"type": ["boolean", "null"], "description": "since 1.1"}
+        }
+      }
+    },
+    "roles": {"type": "array", "items": {"$ref": "#/$defs/role", "required": ["namespace", "name", "rules"]}},
+    "cluster_roles": {"type": "array", "items": {"$ref": "#/$defs/role", "required": ["name", "rules"]}},
+    "role_bindings": {"type": "array", "items": {"$ref": "#/$defs/binding", "required": ["namespace", "name", "role_ref", "subjects"]}},
+    "cluster_role_bindings": {"type": "array", "items": {"$ref": "#/$defs/binding", "required": ["name", "role_ref", "subjects"]}},
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["namespace", "name"],
+        "properties": {
+          "namespace": {"type": "string"},
+          "name": {"type": "string"},
+          "type": {"type": "string"},
+          "labels": {"$ref": "#/$defs/stringMap"},
+          "annotations": {"$ref": "#/$defs/stringMap"},
+          "mounted_by": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["namespace", "workload"],
+              "properties": {
+                "namespace": {"type": "string"},
+                "workload": {"type": "string"},
+                "service_account": {"type": "string"},
+                "via": {"enum": ["volume", "env", "envFrom", "imagePullSecret"], "description": "since 1.1; imagePullSecret is not readable from the container"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "permissions": {"type": "array", "description": "Derived (service account, verb, resource) list; informational."},
+    "usage": {
+      "type": ["object", "null"],
+      "description": "since 1.1: provenance of runtime usage data (absent/null = no usage data, telemetry confidence 0)",
+      "properties": {
+        "source": {"type": "string", "examples": ["k8s-audit", "cloudtrail"]},
+        "window_days": {"type": "number", "minimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "stringMap": {"type": "object", "additionalProperties": {"type": "string"}},
+    "rule": {
+      "type": "object",
+      "required": ["resources", "verbs"],
+      "properties": {
+        "api_groups": {"type": ["array", "null"], "items": {"type": "string"}},
+        "resources": {"type": ["array", "null"], "items": {"type": "string"}},
+        "resource_names": {"type": ["array", "null"], "items": {"type": "string"}},
+        "verbs": {"type": ["array", "null"], "items": {"type": "string"}},
+        "non_resource_urls": {"type": ["array", "null"], "items": {"type": "string"}}
+      }
+    },
+    "role": {
+      "type": "object",
+      "properties": {
+        "namespace": {"type": "string"},
+        "name": {"type": "string"},
+        "rules": {"type": ["array", "null"], "items": {"$ref": "#/$defs/rule"}}
+      }
+    },
+    "binding": {
+      "type": "object",
+      "properties": {
+        "namespace": {"type": "string"},
+        "name": {"type": "string"},
+        "role_ref": {
+          "type": "object",
+          "required": ["kind", "name"],
+          "properties": {"api_group": {"type": "string"}, "kind": {"enum": ["Role", "ClusterRole"]}, "name": {"type": "string"}}
+        },
+        "subjects": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["kind", "name"],
+            "properties": {"kind": {"type": "string"}, "api_group": {"type": "string"}, "name": {"type": "string"}, "namespace": {"type": "string"}}
+          }
+        }
+      }
+    }
+  }
+}

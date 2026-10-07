@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.1",
+  "cluster_id": "kind-dev",
+  "collected_at": "2026-10-07T12:00:00Z",
+  "workloads": [
+    {
+      "namespace": "shop",
+      "name": "web",
+      "kind": "Deployment",
+      "replicas": 2,
+      "service_account": "web-sa",
+      "criticality": "high",
+      "traffic_rps": 0,
+      "public": true,
+      "exposed_by": [
+        "service/LoadBalancer/web"
+      ],
+      "automount_token": true,
+      "mounted_secrets": []
+    },
+    {
+      "namespace": "shop",
+      "name": "worker",
+      "kind": "Deployment",
+      "replicas": 1,
+      "service_account": "worker-sa",
+      "criticality": "medium",
+      "traffic_rps": 0,
+      "public": false,
+      "exposed_by": [],
+      "automount_token": null,
+      "mounted_secrets": [
+        "db-creds"
+      ]
+    }
+  ],
+  "service_accounts": [
+    {
+      "namespace": "shop",
+      "name": "web-sa",
+      "automount_token": false
+    },
+    {
+      "namespace": "shop",
+      "name": "worker-sa",
+      "secrets": []
+    }
+  ],
+  "roles": [
+    {
+      "namespace": "shop",
+      "name": "deployer",
+      "rules": [
+        {
+          "api_groups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments"
+          ],
+          "verbs": [
+            "patch"
+          ]
+        }
+      ]
+    }
+  ],
+  "cluster_roles": [
+    {
+      "name": "secret-reader",
+      "rules": [
+        {
+          "api_groups": [
+            ""
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "health",
+      "rules": [
+        {
+          "api_groups": null,
+          "resources": null,
+          "verbs": [
+            "get"
+          ],
+          "non_resource_urls": [
+            "/healthz"
+          ]
+        }
+      ]
+    }
+  ],
+  "role_bindings": [
+    {
+      "namespace": "shop",
+      "name": "web-deploys",
+      "role_ref": {
+        "api_group": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "deployer"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "web-sa",
+          "namespace": "shop"
+        }
+      ]
+    },
+    {
+      "namespace": "shop",
+      "name": "worker-reads",
+      "role_ref": {
+        "api_group": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "secret-reader"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-sa"
+        }
+      ]
+    }
+  ],
+  "cluster_role_bindings": [
+    {
+      "name": "web-health",
+      "role_ref": {
+        "api_group": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "health"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "web-sa",
+          "namespace": "shop"
+        }
+      ]
+    }
+  ],
+  "secrets": [
+    {
+      "namespace": "shop",
+      "name": "db-creds",
+      "type": "",
+      "mounted_by": [
+        {
+          "namespace": "shop",
+          "workload": "worker",
+          "service_account": "worker-sa",
+          "via": "volume"
+        }
+      ]
+    },
+    {
+      "namespace": "shop",
+      "name": "registry",
+      "type": "",
+      "mounted_by": [
+        {
+          "namespace": "shop",
+          "workload": "web",
+          "service_account": "web-sa",
+          "via": "imagePullSecret"
+        }
+      ]
+    }
+  ],
+  "permissions": [],
+  "usage": null
+}

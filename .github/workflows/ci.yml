@@ -42,7 +42,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pip install pytest
+          pip install pytest jsonschema
           pytest -q
 
       - name: Benchmark smoke (v1 vs v2)

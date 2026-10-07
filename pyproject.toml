@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evonhi-core"
-version = "0.2.0"
+version = "0.2.1"
 description = "EvoNHI Open Core: pure attack-graph and optimization engine"
 readme = "README.md"
 requires-python = ">=3.11"

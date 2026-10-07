@@ -58,6 +58,13 @@ against brute force (including the evolutionary path).
 v1 counted at most 50 paths, enumerated in alphabetical order of entry points (the rest of the cluster was
 invisible) and initialized its population densely, so almost every genome exceeded the budget.
 
+## Data contract
+
+The in-cluster [`evonhi-collector`](https://github.com/gnazinu/evonhi-collector) emits a snapshot described by
+[`contracts/cluster-snapshot.v1.schema.json`](contracts/cluster-snapshot.v1.schema.json).
+`evonhi_core.providers.kubernetes.snapshot.cluster_model_from_snapshot` is the only code that interprets it, and it is
+open so you can audit what is done with your data (secret values are never part of the contract).
+
 ## Quick usage
 
 ```bash

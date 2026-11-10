@@ -41,7 +41,10 @@ about most ("crown jewels"), EvoNHI Core:
 | Small components | exact enumeration with budget pruning | provably optimal Pareto front |
 | Large components | memetic NSGA-II: greedy-ladder, min-cut and per-jewel-cut seeding, budget repair, elitist archive, redundancy elimination | high-quality fronts where exhaustive search is impossible |
 | Global plan | multi-choice knapsack DP over component fronts | exact combination; reports `optimality: exact` when every part was exact |
+| Graph size | compact Kubernetes graph: wide grants point at a shared hub ("every secret in namespace X") | O(permissions + objects) instead of O(permissions × objects); risk is provably identical |
 | Evaluation | per-jewel reverse Dijkstra with shortest-path-DAG skipping and per-region caching; label-setting search when guards grant capabilities | thousands of evaluations per second in pure Python |
+
+The search runs under a wall-clock budget (`PlannerConfig.time_budget_seconds`) and reports `timed_out` when it had to stop early.
 
 `tests/test_planner.py` checks the risk evaluator against a naive networkx reference and the search
 against brute force (including the evolutionary path).

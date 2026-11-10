@@ -65,6 +65,7 @@ class ComponentEvaluator:
         jewels: list[int],
         entries: list[int],
         effects: Mapping[int, ActionEffect],
+        cache_entries: int = 200_000,
     ) -> None:
         self.surface = surface
         self.jewels = jewels
@@ -72,6 +73,7 @@ class ComponentEvaluator:
         self.effects = effects
         self.model = surface.risk_model
         self.evaluations = 0
+        self._cache_entries = max(cache_entries, 1)
         self._cache: dict[frozenset[int], Evaluation] = {}
         # A "unit" is a jewel (static costs: reverse search per jewel) or an entry (stateful costs:
         # forward search per entry). A unit's result only depends on the selected actions that touch
@@ -119,6 +121,8 @@ class ComponentEvaluator:
                 exposures += n - n0
                 jewels_exposed += (n > 0) - (n0 > 0)
             result = Evaluation(risk=max(risk, 0.0), exposures=exposures, jewels_exposed=jewels_exposed)
+        if len(self._cache) >= self._cache_entries:
+            self._cache = {frozenset(): self.baseline}  # memoization only: dropping it is always safe
         self._cache[selection] = result
         return result
 
@@ -171,6 +175,8 @@ class ComponentEvaluator:
                 state = baseline  # no modified edge lies on this jewel's cheapest routes
             else:
                 state = self._compute_unit(unit, mods)
+            if len(self._unit_cache) >= self._cache_entries:
+                self._unit_cache.clear()
             self._unit_cache[cache_key] = state
         return state
 

@@ -79,6 +79,12 @@ class PlannerConfig:
     max_generations: int = 80
     stagnation_generations: int = 12
     max_evaluations: int = 250_000
+    #: Wall-clock budget for the search (None = unlimited). Shared across components: each one gets
+    #: an equal share of what is left, so small components cannot starve the large ones. When it runs
+    #: out the planner returns the best plans found so far and reports ``timed_out``.
+    time_budget_seconds: float | None = 120.0
+    #: Upper bound on memoized evaluations per component (the caches are dropped when exceeded).
+    cache_entries: int = 200_000
     archive_size: int = 64
     #: Probability of running redundancy elimination on an offspring (memetic step).
     local_search_rate: float = 0.25
@@ -135,6 +141,7 @@ class PlanningDiagnostics:
     optimality: str  # "exact" | "heuristic"
     runtime_seconds: float
     budget: int | None
+    timed_out: bool = False
 
 
 @dataclass(slots=True)

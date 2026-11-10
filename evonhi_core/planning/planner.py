@@ -142,11 +142,23 @@ def plan_remediation(
         actions_by.setdefault(find(node_component[surface.edge_src[next(iter(effect.edges))]]), []).append(effect)
 
     components: list[_Component] = []
-    for root in sorted(jewels_by):
+    timed_out = False
+    hard_deadline = None if config.time_budget_seconds is None else time.monotonic() + config.time_budget_seconds
+    # Smallest components first (cheap, usually exact). Each gets an equal share of the time left, so
+    # whatever the small ones do not use flows to the large ones at the end.
+    roots = sorted(jewels_by, key=lambda r: (len(actions_by.get(r, ())), r))
+    for position, root in enumerate(roots):
         comp_effects = actions_by.get(root, [])
-        evaluator = ComponentEvaluator(surface, jewels_by[root], entries_by.get(root, []), {e.index: e for e in comp_effects})
-        search = ComponentSearch(evaluator, comp_effects, budget, config, rng)
+        evaluator = ComponentEvaluator(
+            surface, jewels_by[root], entries_by.get(root, []), {e.index: e for e in comp_effects}, cache_entries=config.cache_entries
+        )
+        deadline = None
+        if hard_deadline is not None:
+            now = time.monotonic()
+            deadline = now + max(hard_deadline - now, 0.0) / (len(roots) - position)
+        search = ComponentSearch(evaluator, comp_effects, budget, config, rng, deadline)
         front = search.run()
+        timed_out = timed_out or search.timed_out
         components.append(_Component(evaluator, frozenset(e.index for e in comp_effects), front, search.exact or not comp_effects))
 
     plan_eval = _Plan(components, effects)
@@ -174,6 +186,7 @@ def plan_remediation(
         optimality="exact" if exact else "heuristic",
         runtime_seconds=round(time.perf_counter() - started, 4),
         budget=budget,
+        timed_out=timed_out,
     )
     return PlanningResult(
         baseline_risk=baseline.risk,
@@ -197,10 +210,16 @@ def _drop_dominated(effects: list[ActionEffect]) -> list[ActionEffect]:
     Pareto front because risk is monotone: more edge modifications never increase it."""
     ordered = sorted(effects, key=lambda e: (e.cost, e.impact, -len(e.edges), e.action_id))
     kept: list[ActionEffect] = []
+    # An action can only be covered by one that touches every edge it touches, so it is enough to
+    # look at the kept actions on its least-shared edge (inverted index) instead of at all of them.
+    by_edge: dict[int, list[ActionEffect]] = {}
     for effect in ordered:
-        if any(k.cost <= effect.cost and k.impact <= effect.impact + _EPS and k.covers(effect) for k in kept):
+        rarest = min(effect.edges, key=lambda e: len(by_edge.get(e, ())))
+        if any(k.cost <= effect.cost and k.impact <= effect.impact + _EPS and k.covers(effect) for k in by_edge.get(rarest, ())):
             continue
         kept.append(effect)
+        for edge in effect.edges:
+            by_edge.setdefault(edge, []).append(effect)
     return sorted(kept, key=lambda e: e.index)
 
 

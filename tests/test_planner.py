@@ -346,3 +346,39 @@ def test_feasible_subset_counter_matches_brute_force():
             1 for r in range(len(costs) + 1) for combo in itertools.combinations(range(len(costs)), r) if sum(costs[i] for i in combo) <= budget
         )
         assert search._feasible_subsets() == expected
+
+
+def test_time_budget_returns_valid_plans_and_reports_timeout():
+    graph, actions = random_instance(11, components=1, mids=10, density=0.4)
+    config = PlannerConfig(exact_action_limit=0, exact_subset_limit=0, time_budget_seconds=0.0)
+    result = plan_remediation(graph, actions, budget=12, config=config)
+    assert result.diagnostics.timed_out
+    assert result.diagnostics.optimality == "heuristic"
+    for plan in result.plans:
+        assert plan.cost <= 12
+        risk, _ = reference_risk(graph, actions, set(plan.selected_actions))
+        assert plan.risk_after == pytest.approx(risk, abs=1e-5)
+
+
+def test_bounded_cache_does_not_change_results():
+    graph, actions = random_instance(5, components=2, guards=True)
+    unbounded = plan_remediation(graph, actions, budget=10)
+    tiny = plan_remediation(graph, actions, budget=10, config=PlannerConfig(cache_entries=4))
+    assert [(p.strategy, p.selected_actions, p.risk_after) for p in tiny.plans] == [
+        (p.strategy, p.selected_actions, p.risk_after) for p in unbounded.plans
+    ]
+
+
+def test_indexed_dominance_filter_matches_pairwise_definition():
+    from evonhi_core.planning.planner import _drop_dominated
+
+    for seed in range(20):
+        graph, actions = random_instance(seed, components=2, guards=True)
+        surface = AttackSurface(graph, ("workload",), RiskModel())
+        effects = [e for e in surface.compile_actions(actions) if e.edges]
+        ordered = sorted(effects, key=lambda e: (e.cost, e.impact, -len(e.edges), e.action_id))
+        expected: list = []
+        for effect in ordered:
+            if not any(k.cost <= effect.cost and k.impact <= effect.impact + 1e-9 and k.covers(effect) for k in expected):
+                expected.append(effect)
+        assert [e.index for e in _drop_dominated(effects)] == sorted(e.index for e in expected)

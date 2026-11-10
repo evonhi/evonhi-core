@@ -17,6 +17,7 @@ import bisect
 import itertools
 import math
 import random
+import time
 from dataclasses import dataclass
 from typing import Callable, Iterable, Sequence
 
@@ -74,6 +75,7 @@ class ComponentSearch:
         budget: int | None,
         config: PlannerConfig,
         rng: random.Random,
+        deadline: float | None = None,
     ) -> None:
         self.evaluator = evaluator
         self.effects = {e.index: e for e in effects}
@@ -81,7 +83,15 @@ class ComponentSearch:
         self.budget = budget
         self.config = config
         self.rng = rng
+        self.deadline = deadline  # time.monotonic() value; None = no limit
         self.exact = False
+        self.timed_out = False
+
+    def _expired(self) -> bool:
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            self.timed_out = True
+            return True
+        return False
 
     # ------------------------------------------------------------------ helpers
 
@@ -106,8 +116,9 @@ class ComponentSearch:
         if not self.actions:
             return [self.candidate(frozenset())]
         if len(self.actions) <= self.config.exact_action_limit or self._feasible_subsets() <= self.config.exact_subset_limit:
-            self.exact = True
-            return self._exact()
+            front = self._exact()
+            self.exact = not self.timed_out
+            return front
         return self._memetic()
 
     def _feasible_subsets(self) -> int:
@@ -130,7 +141,11 @@ class ComponentSearch:
 
         def walk(start: int, chosen: list[int], cost: int) -> None:
             found.append(self.candidate(frozenset(chosen)))
+            if len(found) % 256 == 0 and self._expired():
+                return
             for pos in range(start, len(actions)):
+                if self.timed_out:
+                    return
                 idx = actions[pos]
                 new_cost = cost + self.effects[idx].cost
                 if not self._affordable(new_cost):
@@ -150,7 +165,7 @@ class ComponentSearch:
         cost = self._cost(selection)
         risk = self.evaluator.evaluate(selection).risk
         ladder = [selection]
-        while True:
+        while not self._expired():
             tight = self.evaluator.tight_edges(selection)
             best: tuple[float, int, float] | None = None
             for idx in self.actions:
@@ -173,6 +188,7 @@ class ComponentSearch:
             cost += self.effects[best[1]].cost
             risk -= best[2]
             ladder.append(selection)
+        return ladder
 
     def min_cut_seeds(self) -> list[frozenset[int]]:
         """Cheapest action sets that fully disconnect entries from (all / each) crown jewels.
@@ -238,6 +254,8 @@ class ComponentSearch:
             seeds.append(full[1])
         per_jewel = []
         for jewel in self.evaluator.jewels:
+            if self._expired():
+                break
             cut = cut_for([jewel], regions[jewel])
             if cut is not None:
                 crit = surface.jewel_criticality[jewel]
@@ -285,7 +303,10 @@ class ComponentSearch:
         for weight in (0.0, 0.5, 2.0):
             seeds.extend(self.greedy_ladder(impact_weight=weight))
         seeds.extend(self.min_cut_seeds())
-        seeds.extend(frozenset({i}) for i in self.actions if value[i] > _EPS and self._affordable(self.effects[i].cost))
+        # Single-action seeds: only the most valuable ones, so the population (and the O(n^2)
+        # non-dominated sort) stays bounded when a component has thousands of actions.
+        singles = sorted((i for i in self.actions if value[i] > _EPS and self._affordable(self.effects[i].cost)), key=lambda i: (-value[i], i))
+        seeds.extend(frozenset({i}) for i in singles[: config.population_size])
 
         archive: dict[frozenset[int], Candidate] = {}
 
@@ -317,7 +338,10 @@ class ComponentSearch:
         admit(population)
 
         stagnant = 0
+        population = _environmental_selection(population, max(config.population_size, 8) * 2)
         for _generation in range(config.max_generations):
+            if self._expired():
+                break
             ranks, crowding = _rank_and_crowd(population)
             order = {id(c): i for i, c in enumerate(population)}
 
@@ -354,10 +378,13 @@ class ComponentSearch:
 
         # Final memetic polish: redundancy elimination everywhere, then spend leftover budget greedily
         # on the lowest-risk plans.
-        polished = [self.candidate(self.drop_redundant(c.selection)) for c in archive.values()]
-        admit(polished)
+        if not self._expired():
+            polished = [self.candidate(self.drop_redundant(c.selection)) for c in archive.values()]
+            admit(polished)
         best = sorted(archive.values(), key=lambda c: (c.risk, c.cost, c.impact))[:3]
         for cand in best:
+            if self._expired():
+                break
             admit(self.candidate(s) for s in self.greedy_ladder(start=cand.selection)[1:])
         return list(archive.values())
 

@@ -26,7 +26,7 @@ def test_build_graph_matches_shim(name: str):
     model, scenario = ALL_SCENARIOS[name]()
     provider = KubernetesProvider()
     via_provider = provider.build_graph(model, scenario)
-    via_shim = build_attack_graph(model, scenario)
+    via_shim = build_attack_graph(model, scenario, compact=True)  # the provider emits the compact shape
     assert isinstance(via_provider, nx.DiGraph)
     assert set(via_provider.nodes) == set(via_shim.nodes)
     assert set(via_provider.edges) == set(via_shim.edges)

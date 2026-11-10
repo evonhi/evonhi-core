@@ -45,6 +45,8 @@ EDGE_LABELS: dict[str, str] = {
     "granted_permission": "is granted permission",
     "read_secret": "can read secret",
     "spawn_workload_as": "can pivot into another service account",
+    "pivot_identity": "can assume another identity",
+    "contains": "which includes",
 }
 
 #: Upper bound on the capability domain size; keeps the 2^k term of the stateful search

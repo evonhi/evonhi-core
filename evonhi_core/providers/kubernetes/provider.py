@@ -23,12 +23,9 @@ if TYPE_CHECKING:
 class KubernetesProvider:
     """Graph-side Kubernetes provider. Structurally conforms to GraphProvider.
 
-    TODO (tech debt, multi-cloud refactor): migrate build_graph to construct through
-    CanonicalGraph.add_permission_edge like AwsProvider does (Fase 5), so effective-permission
-    resolution is structurally enforced here too. It currently emits a byte-identical raw
-    nx.DiGraph to protect the S1-S4 golden; the migration must move together with the
-    downstream consumers (path_analysis/reporting/remediation) that read K8s edge attrs, and
-    re-baseline the golden if edge attrs (guard/weight) change.
+    Emits the compact graph (hub nodes, only escalation-relevant permissions): same attacker effort
+    between any two nodes as the legacy shape, at O(permissions + objects) size. The legacy shape is
+    still available through ``build_attack_graph(model, scenario)`` for the v1 goldens.
     """
 
     name: str = "kubernetes"
@@ -42,4 +39,4 @@ class KubernetesProvider:
         return self._resolver
 
     def build_graph(self, model: "ClusterModel", scenario: "ScenarioConfig") -> nx.DiGraph:
-        return build_attack_graph(model, scenario)
+        return build_attack_graph(model, scenario, compact=True)

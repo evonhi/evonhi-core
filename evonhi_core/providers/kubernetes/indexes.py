@@ -61,6 +61,14 @@ class KubernetesIndexes:
         self._sas_by_ns.setdefault(namespace, []).append(node)
         self._all_sas.append(node)
 
+    # -- namespace views (hub construction in compact graphs) ----------------
+
+    def secret_nodes_by_namespace(self) -> dict[str, list[str]]:
+        return {ns: [node for node, _name in items] for ns, items in self._secrets_by_ns.items()}
+
+    def service_account_nodes_by_namespace(self) -> dict[str, list[str]]:
+        return {ns: list(nodes) for ns, nodes in self._sas_by_ns.items()}
+
     # -- queries (replace the old O(N) scans) --------------------------------
 
     def secret_targets(self, grant_scope: str, grant_namespace: str | None, resource_names: list[str]) -> list[str]:

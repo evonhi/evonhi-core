@@ -120,10 +120,55 @@ def _attach_workload_nodes(
             )
 
 
-def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig) -> nx.DiGraph:
+def scope_id(namespace: str | None, member_kind: str) -> str:
+    """Hub node standing for "every <member_kind> in <namespace>" (``*`` = cluster-wide)."""
+    return f"scope:{namespace or '*'}:{member_kind}"
+
+
+def _hub(graph: nx.DiGraph, namespace: str | None, member_kind: str) -> str:
+    hub = scope_id(namespace, member_kind)
+    if not graph.has_node(hub):
+        where = f"namespace {namespace}" if namespace else "the whole cluster"
+        graph.add_node(hub, kind="scope", name=f"every {member_kind[:-1]} in {where}", scope_namespace=namespace or "*", member_kind=member_kind)
+    return hub
+
+
+def _link_hubs(graph: nx.DiGraph, indexes: KubernetesIndexes) -> None:
+    """Connect each hub to its members once: namespace hubs to their objects, the cluster hub to the
+    namespace hubs. This is what turns O(permissions x objects) edges into O(permissions + objects)."""
+    for member_kind, by_namespace in (("secrets", indexes.secret_nodes_by_namespace()), ("serviceaccounts", indexes.service_account_nodes_by_namespace())):
+        cluster_hub = scope_id(None, member_kind)
+        has_cluster_hub = graph.has_node(cluster_hub)
+        for namespace, members in by_namespace.items():
+            namespace_hub = scope_id(namespace, member_kind)
+            if has_cluster_hub and not graph.has_node(namespace_hub):
+                _hub(graph, namespace, member_kind)
+            if not graph.has_node(namespace_hub):
+                continue
+            for member in members:
+                graph.add_edge(namespace_hub, member, relation="contains", rationale=f"Member of {graph.nodes[namespace_hub]['name']}.")
+            if has_cluster_hub:
+                graph.add_edge(cluster_hub, namespace_hub, relation="contains", rationale="Cluster-wide scope includes every namespace.")
+
+
+def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig, *, compact: bool = False) -> nx.DiGraph:
+    """Build the Kubernetes attack graph.
+
+    ``compact=False`` (default, legacy shape): one permission node per granted (rule, group, resource,
+    verb) and one edge from each escalating permission to every object it reaches.
+
+    ``compact=True`` (what KubernetesProvider uses): permissions that neither read secrets nor mutate
+    workloads are not materialized, and wide grants point at a shared hub node ("every secret in
+    namespace X") instead of at each object. Attacker effort between any two nodes is identical in
+    both shapes (hub membership edges cost nothing), so risk and plans do not change; size drops from
+    O(permissions x objects) to O(permissions + objects). In compact mode a pivot grant reaches every
+    service account known at the end of the build, including ones that only appear as binding
+    subjects (the legacy shape misses those that are declared after the grant is processed).
+    """
     graph = nx.DiGraph()
     indexes = KubernetesIndexes()
     role_index = _build_role_index(model)
+    skipped_permissions = 0
 
     for secret in model.secrets:
         sid = node_id("secret", secret.metadata.namespace, secret.metadata.name)
@@ -167,6 +212,11 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig) -> nx.DiGr
                                 verb,
                             )
                             resource_names = sorted(set(rule.resource_names))
+                            reads_secrets = _permission_targets_secret(resource, verb, api_group)
+                            mutates_workloads = _permission_targets_workload_mutation(resource, verb, api_group)
+                            if compact and not (reads_secrets or mutates_workloads):
+                                skipped_permissions += 1
+                                continue
                             graph.add_node(
                                 pid,
                                 kind="permission",
@@ -193,7 +243,15 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig) -> nx.DiGr
                                 ),
                             )
 
-                            if _permission_targets_secret(resource, verb, api_group):
+                            if reads_secrets and compact and not resource_names:
+                                graph.add_edge(
+                                    pid,
+                                    _hub(graph, grant_namespace, "secrets"),
+                                    relation="read_secret",
+                                    source_object=role.metadata.name,
+                                    rationale="Permission can read secret material that could unlock crown-jewel access.",
+                                )
+                            elif reads_secrets:
                                 for secret_id in indexes.secret_targets(grant_scope, grant_namespace, resource_names):
                                     graph.add_edge(
                                         pid,
@@ -203,11 +261,13 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig) -> nx.DiGr
                                         rationale="Permission can read secret material that could unlock crown-jewel access.",
                                     )
 
-                            if _permission_targets_workload_mutation(resource, verb, api_group):
+                            if mutates_workloads:
                                 targets: list[tuple[str, str | None]] = []
                                 if resource_names and verb != "create":
                                     targets = indexes.workload_targets(grant_scope, grant_namespace, resource_names, current_sa=sa_id)
-                                if not targets:
+                                if not targets and compact:
+                                    targets = [(_hub(graph, grant_namespace, "serviceaccounts"), None)]
+                                elif not targets:
                                     targets = indexes.service_account_targets(grant_scope, grant_namespace, current_sa=sa_id)
                                 for target_sa, target_workload in targets:
                                     graph.add_edge(
@@ -222,5 +282,9 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig) -> nx.DiGr
                                         ),
                                     )
 
+    if compact:
+        _link_hubs(graph, indexes)
+        graph.graph["compact"] = True
+        graph.graph["skipped_permissions"] = skipped_permissions
     _mark_crown_jewels(graph, scenario.crown_jewels)
     return graph

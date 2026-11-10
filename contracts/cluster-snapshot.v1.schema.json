@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/gnazinu/evonhi-core/contracts/cluster-snapshot.v1.schema.json",
+  "$id": "https://github.com/evonhi/evonhi-core/contracts/cluster-snapshot.v1.schema.json",
   "title": "EvoNHI Kubernetes cluster snapshot (v1)",
   "description": "Payload emitted by evonhi-collector and translated into a ClusterModel by evonhi_core.providers.kubernetes.snapshot. Minor versions only add optional fields. Secret values are never part of the contract.",
   "type": "object",

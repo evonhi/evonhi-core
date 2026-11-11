@@ -382,3 +382,37 @@ def test_indexed_dominance_filter_matches_pairwise_definition():
             if not any(k.cost <= effect.cost and k.impact <= effect.impact + 1e-9 and k.covers(effect) for k in expected):
                 expected.append(effect)
         assert [e.index for e in _drop_dominated(effects)] == sorted(e.index for e in expected)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_incremental_greedy_ladder_matches_full_recomputation(seed):
+    """The ladder only refreshes gains of actions related to the last pick; that must be exact."""
+    from evonhi_core.planning.search import ComponentSearch
+
+    graph, actions = random_instance(seed, components=3, mids=5, density=0.35)
+    evaluator, _ = evaluator_for(graph, actions)
+    effects = [evaluator.effects[i] for i in sorted(evaluator.effects)]
+    budget = 12
+    search = ComponentSearch(evaluator, effects, budget, PlannerConfig(), random.Random(0))
+
+    selection: frozenset[int] = frozenset()
+    expected = [selection]
+    while True:
+        risk = evaluator.evaluate(selection).risk
+        cost = sum(evaluator.effects[i].cost for i in selection)
+        best = None
+        for effect in effects:
+            if effect.index in selection or cost + effect.cost > budget:
+                continue
+            gain = risk - evaluator.evaluate(selection | {effect.index}).risk
+            if gain <= 1e-9:
+                continue
+            score = gain / (effect.cost + 1e-6)
+            if best is None or score > best[0] + 1e-9:
+                best = (score, effect.index)
+        if best is None:
+            break
+        selection = selection | {best[1]}
+        expected.append(selection)
+
+    assert search.greedy_ladder() == expected

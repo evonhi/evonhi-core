@@ -165,29 +165,39 @@ class ComponentSearch:
         cost = self._cost(selection)
         risk = self.evaluator.evaluate(selection).risk
         ladder = [selection]
+        # Marginal gains are cached across steps: applying an action only changes the gain of the
+        # actions related to it (see ComponentEvaluator.related_actions), so only those are redone.
+        gains: dict[int, float] = {}
+        stale: set[int] = set(self.actions) - selection
         while not self._expired():
             tight = self.evaluator.tight_edges(selection)
-            best: tuple[float, int, float] | None = None
-            for idx in self.actions:
-                if idx in selection:
+            for idx in stale:
+                effect = self.effects[idx]
+                if not self._affordable(cost + effect.cost) or (tight is not None and not (effect.edges & tight)):
+                    gains.pop(idx, None)
                     continue
+                gain = risk - self.evaluator.evaluate(selection | {idx}).risk
+                if gain > _EPS:
+                    gains[idx] = gain
+                else:
+                    gains.pop(idx, None)
+            best: tuple[float, int] | None = None
+            for idx in sorted(gains):
                 effect = self.effects[idx]
                 if not self._affordable(cost + effect.cost):
                     continue
-                if tight is not None and not (effect.edges & tight):
-                    continue
-                gain = risk - self.evaluator.evaluate(selection | {idx}).risk
-                if gain <= _EPS:
-                    continue
-                score = gain / (effect.cost + impact_weight * effect.impact + 1e-6)
+                score = gains[idx] / (effect.cost + impact_weight * effect.impact + 1e-6)
                 if best is None or score > best[0] + _EPS:
-                    best = (score, idx, gain)
+                    best = (score, idx)
             if best is None:
                 return ladder
-            selection = selection | {best[1]}
-            cost += self.effects[best[1]].cost
-            risk -= best[2]
+            chosen = best[1]
+            selection = selection | {chosen}
+            cost += self.effects[chosen].cost
+            risk -= gains.pop(chosen)
             ladder.append(selection)
+            related = self.evaluator.related_actions(chosen)
+            stale = (set(self.actions) if related is None else set(related)) - selection
         return ladder
 
     def min_cut_seeds(self) -> list[frozenset[int]]:

@@ -94,6 +94,14 @@ class ComponentEvaluator:
                 unit_actions[unit].add(idx)
         self._unit_actions = {u: frozenset(a) for u, a in unit_actions.items()}
         self._unit_cache: dict[tuple[int, frozenset[int]], tuple] = {}
+        # Edges on a cheapest route to each jewel. Kept apart from the evaluation cache: only the
+        # baseline (for skipping untouched jewels) and the greedy search need them, and storing one
+        # edge set per cached evaluation is what made large components memory-hungry.
+        self._baseline_tight: dict[int, frozenset[int]] = {}
+        self._tight_cache: dict[tuple[int, frozenset[int]], frozenset[int]] = {}
+        if not surface.stateful:
+            for jewel in jewels:
+                self._baseline_tight[jewel] = frozenset(self._reverse_dijkstra(jewel, _NO_MODS)[2])
         self._baseline_unit = {u: self._compute_unit(u, _NO_MODS) for u in units}
         self.baseline = self._full_evaluation({u: self._baseline_unit[u] for u in units})
         self._cache[frozenset()] = self.baseline
@@ -115,8 +123,8 @@ class ComponentEvaluator:
             base = self.baseline
             risk, exposures, jewels_exposed = base.risk, base.exposures, base.jewels_exposed
             for jewel in affected:
-                p, n, _tight = self._unit_state(jewel, selection)
-                p0, n0, _ = self._baseline_unit[jewel]
+                p, n = self._unit_state(jewel, selection)
+                p0, n0 = self._baseline_unit[jewel]
                 risk += self.surface.jewel_criticality[jewel] * (p - p0)
                 exposures += n - n0
                 jewels_exposed += (n > 0) - (n0 > 0)
@@ -139,7 +147,33 @@ class ComponentEvaluator:
             return None
         tight: set[int] = set()
         for jewel in self.jewels:
-            tight |= self._unit_state(jewel, selection)[2]
+            tight |= self._tight_state(jewel, selection)
+        return tight
+
+    def related_actions(self, action: int) -> frozenset[int] | None:
+        """Actions whose marginal effect can change once ``action`` is applied: those touching a jewel
+        it touches (risk is a sum over jewels, each depending only on its own actions). ``None`` =
+        every action, when capability grants couple the jewels through shared entries."""
+        if self.surface.stateful:
+            return None
+        related: set[int] = set()
+        for unit in self._action_units[action]:
+            related |= self._unit_actions[unit]
+        return frozenset(related)
+
+    def _tight_state(self, jewel: int, selection: frozenset[int]) -> frozenset[int]:
+        key = selection & self._unit_actions[jewel]
+        baseline = self._baseline_tight[jewel]
+        if not key:
+            return baseline
+        cache_key = (jewel, key)
+        tight = self._tight_cache.get(cache_key)
+        if tight is None:
+            mods = Modifications(self.effects[i] for i in key)
+            tight = baseline if not (mods.edges & baseline) else frozenset(self._reverse_dijkstra(jewel, mods)[2])
+            if len(self._tight_cache) >= 4096:
+                self._tight_cache.clear()
+            self._tight_cache[cache_key] = tight
         return tight
 
     # ------------------------------------------------------------- unit states
@@ -170,9 +204,8 @@ class ComponentEvaluator:
         state = self._unit_cache.get(cache_key)
         if state is None:
             mods = Modifications(self.effects[i] for i in key)
-            baseline = self._baseline_unit[unit]
-            if not self.surface.stateful and not (mods.edges & baseline[2]):
-                state = baseline  # no modified edge lies on this jewel's cheapest routes
+            if not self.surface.stateful and not (mods.edges & self._baseline_tight[unit]):
+                state = self._baseline_unit[unit]  # no modified edge lies on this jewel's cheapest routes
             else:
                 state = self._compute_unit(unit, mods)
             if len(self._unit_cache) >= self._cache_entries:
@@ -184,9 +217,7 @@ class ComponentEvaluator:
         if self.surface.stateful:
             best, _labels = self._forward_labels(unit, mods)
             return ({j: effort for j, (effort, _label) in best.items()},)
-        dist, _nxt, tight = self._reverse_dijkstra(unit, mods)
-        probability, reached = self._jewel_probability(dist)
-        return probability, reached, frozenset(tight)
+        return self._jewel_probability(self._efforts_to(unit, mods))
 
     def _combine_entries(self, states: Mapping[int, tuple]) -> dict[int, tuple[float, int]]:
         survive = {j: 1.0 for j in self.jewels}
@@ -248,6 +279,35 @@ class ComponentEvaluator:
             required = required | extra_req
         unmet = required - held if held else required
         return surface.edge_base[eid] + mods.effort.get(eid, 0.0) + requirement_effort(self.model, unmet)
+
+    def _efforts_to(self, jewel: int, mods: Modifications) -> dict[int, float]:
+        """Cheapest effort from every node to ``jewel`` — the hot loop of the planner. Same search as
+        :meth:`_reverse_dijkstra` without the bookkeeping for routes and tight edges."""
+        in_adj = self.surface.in_adj
+        baseline = self.surface.baseline_effort
+        cutoff = self.model.max_effort
+        removed, touched = mods.removed, mods.edges
+        inf = math.inf
+        dist: dict[int, float] = {jewel: 0.0}
+        heap: list[tuple[float, int]] = [(0.0, jewel)]
+        pop, push = heapq.heappop, heapq.heappush
+        while heap:
+            d, v = pop(heap)
+            if d > dist[v]:
+                continue  # superseded by a cheaper route found later
+            for u, eid in in_adj[v]:
+                if eid in touched:
+                    if eid in removed:
+                        continue
+                    nd = d + self._edge_cost(eid, mods)
+                else:
+                    nd = d + baseline[eid]
+                if nd > cutoff:
+                    continue
+                if nd < dist.get(u, inf) - 1e-12:
+                    dist[u] = nd
+                    push(heap, (nd, u))
+        return dist
 
     def _reverse_dijkstra(self, jewel: int, mods: Modifications) -> tuple[dict[int, float], dict[int, int], set[int]]:
         surface = self.surface

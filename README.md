@@ -31,6 +31,24 @@ about most ("crown jewels"), EvoNHI Core:
    (max reduction, balanced, low disruption, quick win), each as an ordered implementation sequence, plus
    the full budget/risk curve.
 
+### Kubernetes attack primitives
+
+| Modeled | How it is exploited |
+|---|---|
+| Service-account token of a compromised workload | `uses_token` |
+| Secrets mounted or injected into a workload | `mounted_secret` |
+| `get`/`list`/`watch` on Secrets | `read_secret` |
+| Create or mutate workloads (`pods`, `deployments`, `jobs`, ...) | `spawn_workload_as`: run a pod as another service account |
+| `create` on `serviceaccounts/token` (TokenRequest) | `mint_token` |
+| `impersonate` on service accounts | `impersonate` |
+| `pods/exec`, `pods/attach` | `exec_into`: run commands in existing pods |
+| `escalate` / `bind` on roles and cluster roles | `escalate_rbac`: grant itself anything in the scope |
+| Bindings to `system:serviceaccounts`, `system:serviceaccounts:<ns>`, `system:authenticated` | `member_of`: every service account in the group inherits the grant |
+
+Not modeled yet: node escape (privileged pods, `hostPath`, `nodes/proxy`), impersonation of users and groups,
+admission webhooks, and the bridge from service accounts to cloud IAM (IRSA, Workload Identity). Bindings to users
+and to other groups are counted in `graph.graph["unmodeled_subjects"]` instead of being silently ignored.
+
 ### How the planner works (v2)
 
 | Stage | Technique | Why |

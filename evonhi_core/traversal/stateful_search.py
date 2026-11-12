@@ -47,6 +47,11 @@ EDGE_LABELS: dict[str, str] = {
     "spawn_workload_as": "can pivot into another service account",
     "pivot_identity": "can assume another identity",
     "contains": "which includes",
+    "member_of": "is a member of",
+    "mint_token": "can request a token for",
+    "impersonate": "can impersonate",
+    "exec_into": "can run commands in the pods of",
+    "escalate_rbac": "can grant itself permissions over",
 }
 
 #: Upper bound on the capability domain size; keeps the 2^k term of the stateful search

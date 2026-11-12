@@ -69,6 +69,27 @@ class KubernetesIndexes:
     def service_account_nodes_by_namespace(self) -> dict[str, list[str]]:
         return {ns: list(nodes) for ns, nodes in self._sas_by_ns.items()}
 
+    def workload_nodes_by_namespace(self) -> dict[str, list[str]]:
+        return {ns: [node for node, _name, _sa in items] for ns, items in self._workloads_by_ns.items()}
+
+    # -- extended-semantics queries ------------------------------------------
+
+    def service_accounts_in_scope(self, grant_scope: str, grant_namespace: str | None, names: list[str]) -> list[str]:
+        """Service-account nodes in the grant's scope, optionally restricted to ``names``."""
+        nodes = self._all_sas if grant_scope == "Cluster" else self._sas_by_ns.get(grant_namespace or "default", [])
+        if not names:
+            return list(nodes)
+        wanted = set(names)
+        return [node for node in nodes if node.rsplit(":", 1)[-1] in wanted]
+
+    def workloads_in_scope(self, grant_scope: str, grant_namespace: str | None, names: list[str]) -> list[str]:
+        """Workload nodes in scope. ``names`` are pod names: a pod belongs to a workload when it carries
+        its name or is prefixed by it (``web`` owns ``web-7d9f-abcde``)."""
+        items = self._all_workloads if grant_scope == "Cluster" else self._workloads_by_ns.get(grant_namespace or "default", [])
+        if not names:
+            return [node for node, _name, _sa in items]
+        return [node for node, name, _sa in items if any(pod == name or pod.startswith(name + "-") for pod in names)]
+
     # -- queries (replace the old O(N) scans) --------------------------------
 
     def secret_targets(self, grant_scope: str, grant_namespace: str | None, resource_names: list[str]) -> list[str]:

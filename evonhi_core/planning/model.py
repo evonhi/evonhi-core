@@ -20,6 +20,11 @@ DEFAULT_RELATION_EFFORT: Mapping[str, float] = MappingProxyType(
         "spawn_workload_as": 2.0,
         "pivot_identity": 1.5,
         "contains": 0.0,
+        "member_of": 0.0,
+        "mint_token": 1.0,
+        "impersonate": 1.0,
+        "exec_into": 1.5,
+        "escalate_rbac": 2.5,
     }
 )
 

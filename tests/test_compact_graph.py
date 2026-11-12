@@ -36,6 +36,12 @@ RULES = [
     PolicyRule(["pods"], ["create"], [""]),
     PolicyRule(["*"], ["*"], ["*"]),
     PolicyRule(["configmaps", "pods"], ["get", "list"], [""]),  # no escalation semantics
+    PolicyRule(["serviceaccounts/token"], ["create"], [""]),
+    PolicyRule(["serviceaccounts/token"], ["create"], [""], resource_names=["sa-2"]),
+    PolicyRule(["serviceaccounts"], ["impersonate"], [""]),
+    PolicyRule(["pods/exec"], ["create"], [""]),
+    PolicyRule(["pods/exec"], ["create"], [""], resource_names=["app-1-7d9f-abcde"]),
+    PolicyRule(["roles", "clusterroles"], ["bind"], ["rbac.authorization.k8s.io"]),
 ]
 
 
@@ -72,6 +78,10 @@ def random_cluster(seed: int, namespaces: int = 4, workloads: int = 4, secrets: 
                 else:
                     target_ns = ns if rng.random() < 0.7 else rng.choice(names)
                     model.role_bindings.append(RoleBinding(Metadata(f"rb-{binding}", target_ns), "ClusterRole", role, [subject]))
+    for index in range(rng.randint(0, 2)):  # grants to every service account of a namespace / of the cluster
+        group = rng.choice([f"system:serviceaccounts:{rng.choice(names)}", "system:serviceaccounts", "system:authenticated"])
+        role = f"cr-{rng.randrange(len(RULES))}"
+        model.role_bindings.append(RoleBinding(Metadata(f"grp-{index}", rng.choice(names)), "ClusterRole", role, [SubjectRef("Group", group)]))
     jewels = [CrownJewelSpec("secret", f"secret-{rng.randrange(secrets)}", ns, criticality=rng.randint(5, 10)) for ns in names]
     return model, ScenarioConfig(crown_jewels=jewels)
 
@@ -99,7 +109,7 @@ def risk_of(graph, actions, selected: set[str]) -> tuple[float, int]:
 @pytest.mark.parametrize("seed", range(25))
 def test_compact_graph_preserves_risk_and_remediation_effects(seed):
     model, scenario = random_cluster(seed)
-    legacy = build_attack_graph(model, scenario)
+    legacy = build_attack_graph(model, scenario, extended=True)  # same semantics, expanded shape
     compact = build_attack_graph(model, scenario, compact=True)
 
     a, b = assess_risk(legacy), assess_risk(compact)
@@ -143,7 +153,7 @@ def test_compact_graph_is_linear_in_cluster_size():
             RoleBinding(Metadata(f"crb{n}", "default"), "ClusterRole", "admin", [SubjectRef("ServiceAccount", "sa1", ns)], scope="Cluster")
         )
     scenario = ScenarioConfig(crown_jewels=[CrownJewelSpec("secret", "s0", "ns0")])
-    legacy = build_attack_graph(model, scenario)
+    legacy = build_attack_graph(model, scenario, extended=True)
     compact = build_attack_graph(model, scenario, compact=True)
     objects = len(model.secrets) + len(model.service_accounts) + len(model.workloads)
     assert legacy.number_of_edges() > 30_000  # 40 admins x (400 secrets + 400 service accounts)

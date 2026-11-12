@@ -14,8 +14,13 @@ import networkx as nx
 
 from evonhi_core.providers.kubernetes.indexes import KubernetesIndexes
 from evonhi_core.providers.kubernetes.semantics import (
+    _permission_escalates_rbac,
+    _permission_execs_into_pods,
+    _permission_impersonates,
+    _permission_mints_tokens,
     _permission_targets_secret,
     _permission_targets_workload_mutation,
+    service_account_group,
 )
 
 if TYPE_CHECKING:
@@ -136,7 +141,11 @@ def _hub(graph: nx.DiGraph, namespace: str | None, member_kind: str) -> str:
 def _link_hubs(graph: nx.DiGraph, indexes: KubernetesIndexes) -> None:
     """Connect each hub to its members once: namespace hubs to their objects, the cluster hub to the
     namespace hubs. This is what turns O(permissions x objects) edges into O(permissions + objects)."""
-    for member_kind, by_namespace in (("secrets", indexes.secret_nodes_by_namespace()), ("serviceaccounts", indexes.service_account_nodes_by_namespace())):
+    for member_kind, by_namespace in (
+        ("secrets", indexes.secret_nodes_by_namespace()),
+        ("serviceaccounts", indexes.service_account_nodes_by_namespace()),
+        ("workloads", indexes.workload_nodes_by_namespace()),
+    ):
         cluster_hub = scope_id(None, member_kind)
         has_cluster_hub = graph.has_node(cluster_hub)
         for namespace, members in by_namespace.items():
@@ -151,7 +160,36 @@ def _link_hubs(graph: nx.DiGraph, indexes: KubernetesIndexes) -> None:
                 graph.add_edge(cluster_hub, namespace_hub, relation="contains", rationale="Cluster-wide scope includes every namespace.")
 
 
-def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig, *, compact: bool = False) -> nx.DiGraph:
+#: When two semantics connect the same pair of nodes, the edge keeps the one that is easier to exploit.
+_RELATION_RANK = {"mint_token": 0, "impersonate": 0, "read_secret": 0, "exec_into": 1, "spawn_workload_as": 2, "escalate_rbac": 3}
+
+_EXTENDED_RATIONALE = {
+    "mint_token": "Permission can request a token for the service account (TokenRequest).",
+    "impersonate": "Permission can impersonate the service account on any request.",
+    "exec_into": "Permission can run commands inside the pods of this workload.",
+    "escalate_rbac": "Permission can grant itself further RBAC permissions in this scope (escalate/bind).",
+}
+
+
+def _add_escalation_edge(graph: nx.DiGraph, source: str, target: str, relation: str, source_object: str) -> None:
+    if graph.has_edge(source, target) and _RELATION_RANK.get(graph.edges[source, target].get("relation"), 99) <= _RELATION_RANK[relation]:
+        return
+    graph.add_edge(source, target, relation=relation, source_object=source_object, rationale=_EXTENDED_RATIONALE[relation])
+
+
+def _link_groups(graph: nx.DiGraph, indexes: KubernetesIndexes, groups: dict[str, str | None]) -> None:
+    """Every service account in a group's scope inherits what is bound to the group."""
+    by_namespace = indexes.service_account_nodes_by_namespace()
+    for group_node, namespace in groups.items():
+        namespaces = [namespace] if namespace is not None else sorted(by_namespace)
+        for ns in namespaces:
+            for sa_node in by_namespace.get(ns, []):
+                graph.add_edge(sa_node, group_node, relation="member_of", rationale=f"Service account belongs to group {graph.nodes[group_node]['name']}.")
+
+
+def build_attack_graph(
+    model: ClusterModel, scenario: ScenarioConfig, *, compact: bool = False, extended: bool | None = None
+) -> nx.DiGraph:
     """Build the Kubernetes attack graph.
 
     ``compact=False`` (default, legacy shape): one permission node per granted (rule, group, resource,
@@ -164,7 +202,15 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig, *, compact
     O(permissions x objects) to O(permissions + objects). In compact mode a pivot grant reaches every
     service account known at the end of the build, including ones that only appear as binding
     subjects (the legacy shape misses those that are declared after the grant is processed).
+
+    ``extended`` (defaults to ``compact``) adds the escalation primitives beyond secret reads and
+    workload mutation: grants to service-account groups (``system:serviceaccounts[:<ns>]``,
+    ``system:authenticated``), TokenRequest, impersonation, ``pods/exec`` and RBAC ``escalate``/``bind``.
+    Subjects that are not modeled (users, other groups) are counted in ``graph.graph["unmodeled_subjects"]``.
     """
+    extended = compact if extended is None else extended
+    groups: dict[str, str | None] = {}
+    unmodeled_subjects = 0
     graph = nx.DiGraph()
     indexes = KubernetesIndexes()
     role_index = _build_role_index(model)
@@ -188,12 +234,21 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig, *, compact
             continue
         grant_scope, grant_namespace = _resource_scope(binding)
         for subject in binding.subjects:
-            if subject.kind != "ServiceAccount":
+            is_group, group_namespace = service_account_group(subject.name) if subject.kind == "Group" else (False, None)
+            if subject.kind == "ServiceAccount":
+                sa_namespace = subject.namespace or binding.metadata.namespace
+                sa_id = node_id("serviceaccount", sa_namespace, subject.name)
+                graph.add_node(sa_id, kind="serviceaccount", name=subject.name, namespace=sa_namespace)
+                indexes.add_service_account(sa_id, sa_namespace)
+            elif extended and is_group:
+                # The group node stands where a service account would: its members reach it at no cost.
+                sa_namespace = "*"
+                sa_id = f"group:{subject.name}"
+                graph.add_node(sa_id, kind="group", name=subject.name)
+                groups[sa_id] = group_namespace
+            else:
+                unmodeled_subjects += 1
                 continue
-            sa_namespace = subject.namespace or binding.metadata.namespace
-            sa_id = node_id("serviceaccount", sa_namespace, subject.name)
-            graph.add_node(sa_id, kind="serviceaccount", name=subject.name, namespace=sa_namespace)
-            indexes.add_service_account(sa_id, sa_namespace)
             for rule_index, rule in enumerate(role.rules):
                 api_groups = rule.api_groups or [""]
                 for api_group in api_groups:
@@ -214,7 +269,11 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig, *, compact
                             resource_names = sorted(set(rule.resource_names))
                             reads_secrets = _permission_targets_secret(resource, verb, api_group)
                             mutates_workloads = _permission_targets_workload_mutation(resource, verb, api_group)
-                            if compact and not (reads_secrets or mutates_workloads):
+                            mints_tokens = extended and _permission_mints_tokens(resource, verb, api_group)
+                            impersonates = extended and _permission_impersonates(resource, verb, api_group)
+                            execs = extended and _permission_execs_into_pods(resource, verb, api_group)
+                            escalates = extended and _permission_escalates_rbac(resource, verb, api_group)
+                            if compact and not (reads_secrets or mutates_workloads or mints_tokens or impersonates or execs or escalates):
                                 skipped_permissions += 1
                                 continue
                             graph.add_node(
@@ -282,6 +341,37 @@ def build_attack_graph(model: ClusterModel, scenario: ScenarioConfig, *, compact
                                         ),
                                     )
 
+                            source = role.metadata.name
+                            for applies, relation in ((mints_tokens, "mint_token"), (impersonates, "impersonate")):
+                                if not applies:
+                                    continue
+                                if compact and not resource_names:
+                                    identity_targets = [_hub(graph, grant_namespace, "serviceaccounts")]
+                                else:
+                                    identity_targets = indexes.service_accounts_in_scope(grant_scope, grant_namespace, resource_names)
+                                for target in identity_targets:
+                                    if target != sa_id:
+                                        _add_escalation_edge(graph, pid, target, relation, source)
+                            if execs:
+                                if compact and not resource_names:
+                                    exec_targets = [_hub(graph, grant_namespace, "workloads")]
+                                else:
+                                    exec_targets = indexes.workloads_in_scope(grant_scope, grant_namespace, resource_names)
+                                for target in exec_targets:
+                                    _add_escalation_edge(graph, pid, target, "exec_into", source)
+                            if escalates:
+                                if compact:
+                                    admin_targets = [_hub(graph, grant_namespace, "secrets"), _hub(graph, grant_namespace, "serviceaccounts")]
+                                else:
+                                    admin_targets = indexes.secret_targets(grant_scope, grant_namespace, []) + [
+                                        t for t in indexes.service_accounts_in_scope(grant_scope, grant_namespace, []) if t != sa_id
+                                    ]
+                                for target in admin_targets:
+                                    _add_escalation_edge(graph, pid, target, "escalate_rbac", source)
+
+    if extended:
+        _link_groups(graph, indexes, groups)
+    graph.graph["unmodeled_subjects"] = unmodeled_subjects
     if compact:
         _link_hubs(graph, indexes)
         graph.graph["compact"] = True
